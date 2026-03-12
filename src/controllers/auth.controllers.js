@@ -1,7 +1,11 @@
 import { User } from "../models/user.models.js";
 import { asyncHandler } from "../utils/async-handler.js";
 import { ApiError } from "../utils/api-error.js";
-import { emailVerficationMailgenContent, sendMail } from "../utils/mail.js";
+import {
+  emailVerficationMailgenContent,
+  forgotPasswordMailgenContent,
+  sendMail,
+} from "../utils/mail.js";
 import { ApiResponse } from "../utils/api-response.js";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
@@ -186,7 +190,7 @@ const resendEmailVerification = asyncHandler(async (req, res) => {
   const { hashedToken, unHashedToken, tokenExpiry } =
     await user.generateTemparoryToken();
 
-  user?.emailVerificationToken = hashedToken;
+  user.emailVerificationToken = hashedToken;
   user.emailVerificationExpiry = tokenExpiry;
   user.save({ validateBeforeSave: false });
 
@@ -252,13 +256,15 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
 });
 
 const forgotPasswordRequest = asyncHandler(async (req, res) => {
-  const user = await User.findOne(email);
+  const { email } = req.body;
+  console.log("email", email);
+  const user = await User.findOne({ email: email });
   if (!user) {
     throw new ApiError(400, "User does not exist");
   }
 
   const { unHashedToken, hashedToken, tokenExpiry } =
-    await generateTemparoryToken();
+    await user.generateTemparoryToken();
 
   user.forgotPasswordToken = hashedToken;
   user.forgotPasswordExpiry = tokenExpiry;
@@ -303,9 +309,39 @@ const resetForgotPassword = asyncHandler(async (req, res) => {
 
   user.forgotPasswordToken = undefined;
   user.forgotPasswordExpiry = undefined;
-
+  user.password = newPassword;
   await user.save({ validateBeforeSave: false });
 
-  return res.status(200).json(200, {}, "Password has been reset");
+  return res
+    .status(200)
+    .json(new ApiResponse(200, {}, "Password has been reset"));
 });
-export { registerUser, login, logoutUser, getCurrentUser, verifyEmail };
+
+const changeCurrentPassword = asyncHandler(async (req, res) => {
+  const { oldPassword, newPassword } = req.body;
+  const user = await User.findById(req.user._id);
+
+  const isPasswordValid = user.isPasswordCorrect(oldPassword);
+
+  if (!isPasswordValid) {
+    throw new ApiError(400, "Invalid old password");
+  }
+
+  user.password = newPassword;
+  await user.save({ validateBeforeSave: false });
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, {}, "Password has changed successfully!!"));
+});
+export {
+  registerUser,
+  login,
+  logoutUser,
+  getCurrentUser,
+  verifyEmail,
+  resendEmailVerification,
+  changeCurrentPassword,
+  forgotPasswordRequest,
+  resetForgotPassword,
+};
